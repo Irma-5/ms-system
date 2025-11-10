@@ -1,0 +1,54 @@
+service:
+  name: webmaster
+  version: "1.0.0"
+  description: "API Gateway and orchestration service"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+  workers: 1
+  cors_enabled: true
+  cors_origins: ["*"]
+
+dependencies:
+  storage_url: "http://storage:8003"
+  collector_url: "http://collector:8001"
+  mlservice_url: "http://mlservice:8002"
+  visualization_url: "http://visualization:8004"
+  timeout_seconds: 120
+
+web_interface:
+  enabled: true
+  title: "Survival Analysis System"
+  refresh_interval_seconds: 30
+
+api:
+  rate_limit_enabled: false
+  rate_limit_requests: 100
+  rate_limit_period_seconds: 60
+  max_request_size_mb: 100
+
+routing:
+  retry_failed_requests: true
+  retry_attempts: 3
+  retry_delay_seconds: 2
+  circuit_breaker_enabled: true
+  circuit_breaker_threshold: 5
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/app/logs/webmaster.log"
+  log_requests: true
+
+error_handling:
+  return_detailed_errors: true
+  log_errors: true
+  retry_on_service_unavailable: true
+  timeout_seconds: 300
+
+health_check:
+  enabled: true
+  interval_seconds: 30
+  check_dependencies: true

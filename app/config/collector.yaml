@@ -1,0 +1,50 @@
+# Configuration for Collector Service
+service:
+  name: collector
+  description: "Batch creation and data preprocessing service"
+
+server:
+  host: "0.0.0.0"
+  port: 8001
+  debug: false
+  workers: 1
+
+dependencies:
+  storage_url: "http://storage:8003"
+  timeout_seconds: 60
+
+batch:
+  default_size: 1000
+  max_size: 100000
+  strategies:
+    - "balanced"
+    - "random"
+  default_strategy: "random"
+
+preprocessing:
+  constant_cols:
+    - "int_only_flag"
+    - "property_val_method"
+    - "super_conf_flag"
+    - "amortization_type"
+  fill_na_strategy: "median"
+
+statistics:
+  time_bins: 20
+  compute_kde: true
+  kde_bandwidth: 0.25
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/app/logs/collector.log"
+
+error_handling:
+  retry_attempts: 3
+  retry_delay_seconds: 1
+  timeout_seconds: 300
+  max_batch_processing_time: 600
+
+health_check:
+  enabled: true
+  interval_seconds: 30

@@ -1,0 +1,49 @@
+service:
+  name: mlservice
+  description: "Model inference and metrics computation service"
+
+server:
+  host: "0.0.0.0"
+  port: 8002
+  debug: false
+  workers: 1
+
+dependencies:
+  storage_url: "http://storage:8003"
+  timeout_seconds: 120
+
+model:
+  time_grid_size: 100
+  available_events: [1, 2, 3, 4, 5, 6, 7]
+  default_time_grid_size: 100
+  max_batch_size: 10000
+
+metrics:
+  ibs:
+    enabled: true
+    axis: -1
+  auprc:
+    enabled: true
+    num_phi_steps: 100
+  compute_per_event: true
+  compute_mean: true
+
+inference:
+  batch_size: 1000
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/app/logs/mlservice.log"
+
+error_handling:
+  retry_attempts: 3
+  retry_delay_seconds: 2
+  timeout_seconds: 600
+  max_prediction_time: 1800
+  handle_nan: true
+  handle_inf: true
+
+health_check:
+  enabled: true
+  interval_seconds: 30

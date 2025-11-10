@@ -1,0 +1,35 @@
+service:
+  name: storage
+  description: "Storage service for models, batches, results, and metrics"
+
+server:
+  host: "0.0.0.0"
+  port: 8003
+  debug: false
+  workers: 1
+
+storage:
+  base_dir: "/app/storage"
+  models_dir: "/app/storage/models"
+  batches_dir: "/app/storage/batches"
+  results_dir: "/app/storage/results"
+  metrics_dir: "/app/storage/metrics"
+  max_file_size_mb: 1000
+  allowed_extensions:
+    - ".pkl"
+    - ".json"
+    - ".csv"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/app/storage/logs/storage.log"
+
+error_handling:
+  retry_attempts: 3
+  retry_delay_seconds: 1
+  timeout_seconds: 300
+
+health_check:
+  enabled: true
+  interval_seconds: 30

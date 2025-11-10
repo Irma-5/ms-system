@@ -1,0 +1,58 @@
+service:
+  name: visualization
+  description: "Visualization and plotting service"
+
+server:
+  host: "0.0.0.0"
+  port: 8004
+  debug: false
+  workers: 1
+
+dependencies:
+  storage_url: "http://storage:8003"
+  timeout_seconds: 60
+
+plotting:
+  default_figure_size: [12, 6]
+  default_dpi: 100
+  style: "whitegrid"
+  color_palette: "tab10"
+  max_plot_size_mb: 10
+
+kde:
+  bandwidth_adjust: 0.25
+  fill: false
+  alpha: 0.7
+
+histogram:
+  default_bins: 20
+  alpha: 0.5
+
+survival_curves:
+  line_width: 2
+
+metrics_plot:
+  show_mean_line: true
+  mean_line_color: "red"
+  mean_line_style: "--"
+  bar_alpha: 0.7
+
+export:
+  format: "png"
+  base64_encoding: true
+  quality: 95
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "/app/logs/visualization.log"
+
+error_handling:
+  retry_attempts: 3
+  retry_delay_seconds: 1
+  timeout_seconds: 180
+  max_plot_generation_time: 300
+
+health_check:
+  enabled: true
+  interval_seconds: 30

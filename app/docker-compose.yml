@@ -1,0 +1,154 @@
+services:
+  storage:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.storage
+    container_name: survival_storage
+    image: survival_storage:latest
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./storage:/app/storage
+      - ./config:/app/config
+    environment:
+      - SERVICE_NAME=storage
+      - SERVICE_PORT=8003
+      - PYTHONUNBUFFERED=1
+    networks:
+      - survival-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  collector:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.collector
+    container_name: survival_collector
+    image: survival_collector:latest
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - SERVICE_NAME=collector
+      - SERVICE_PORT=8001
+      - STORAGE_URL=http://storage:8003
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      storage:
+        condition: service_healthy
+    networks:
+      - survival-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  mlservice:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mlservice
+    container_name: survival_mlservice
+    image: survival_mlservice:latest
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - SERVICE_NAME=mlservice
+      - SERVICE_PORT=8002
+      - STORAGE_URL=http://storage:8003
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      storage:
+        condition: service_healthy
+    networks:
+      - survival-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  visualization:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.visualization
+    container_name: survival_visualization
+    image: survival_visualization:latest
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - SERVICE_NAME=visualization
+      - SERVICE_PORT=8004
+      - STORAGE_URL=http://storage:8003
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      storage:
+        condition: service_healthy
+    networks:
+      - survival-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  webmaster:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.webmaster
+    container_name: survival_webmaster
+    image: survival_webmaster:latest
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+    environment:
+      - SERVICE_NAME=webmaster
+      - SERVICE_PORT=8000
+      - STORAGE_URL=http://storage:8003
+      - COLLECTOR_URL=http://collector:8001
+      - MLSERVICE_URL=http://mlservice:8002
+      - VISUALIZATION_URL=http://visualization:8004
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      storage:
+        condition: service_healthy
+      collector:
+        condition: service_healthy
+      mlservice:
+        condition: service_healthy
+      visualization:
+        condition: service_healthy
+    networks:
+      - survival-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  survival-network:
+    driver: bridge
+
+volumes:
+  storage-data:
+    driver: local

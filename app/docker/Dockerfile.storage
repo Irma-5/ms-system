@@ -1,0 +1,23 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY storage_service.py .
+COPY utils.py .
+RUN mkdir -p /app/storage/models \
+    /app/storage/batches \
+    /app/storage/results \
+    /app/storage/metrics
+
+EXPOSE 8003
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
+
+CMD ["python", "-u", "storage_service.py"]
