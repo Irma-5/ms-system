@@ -1,7 +1,3 @@
-"""
-WebMaster Service - Main orchestrator and API gateway
-Coordinates all other services
-"""
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import requests
@@ -28,8 +24,6 @@ def call_service(service_url, endpoint, method='GET', data=None):
         return response.json(), response.status_code
     except Exception as e:
         return {'error': str(e)}, 500
-
-
 
 @app.route('/')
 def index():
