@@ -24,7 +24,6 @@ Microservices architecture for competing risks analysis
 
 ```bash
 git clone https://github.com/<your-username>/<repo-name>.git
-cd <repo-name>
 ```
 
 2. Переходим в проект
