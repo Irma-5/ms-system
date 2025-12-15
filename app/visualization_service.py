@@ -11,7 +11,7 @@ import base64
 from config import *
 
 app = Flask(__name__)
-
+config = Config('visualization')
 sns.set_style("whitegrid")
 
 
@@ -80,10 +80,9 @@ def plot_metrics_comparison(metrics_dict, title="Metrics Comparison"):
     fig, axes = plt.subplots(1, 2, figsize=(14, 6))
     
     if 'ibs' in metrics_dict and metrics_dict['ibs']:
-        events = list(metrics_dict['ibs'].keys())
-        values = list(metrics_dict['ibs'].values())
+        events, values = zip(*sorted(metrics_dict['ibs'].items()))
         
-        axes[0].line(events, values, color='skyblue', alpha=0.7)
+        axes[0].plot(events, values, color='skyblue', alpha=0.7)
         axes[0].set_xlabel('Event', fontsize=12)
         axes[0].set_ylabel('IBS_rm', fontsize=12)
         axes[0].set_title('IBS_rm by event', fontsize=14)
@@ -95,12 +94,11 @@ def plot_metrics_comparison(metrics_dict, title="Metrics Comparison"):
             axes[0].legend()
     
     if 'auprc' in metrics_dict and metrics_dict['auprc']:
-        events = list(metrics_dict['auprc'].keys())
-        values = list(metrics_dict['auprc'].values())
+        events, values = zip(*sorted(metrics_dict['auprc'].items()))
         
-        axes[1].line(events, values, color='lightgreen', alpha=0.7)
+        axes[1].plot(events, values, color='lightgreen', alpha=0.7)
         axes[1].set_xlabel('Event', fontsize=12)
-        axes[1].set_ylabel('AUPRC Score', fontsize=12)
+        axes[1].set_ylabel('AUPRC', fontsize=12)
         axes[1].set_title('AUPRC by event', fontsize=14)
         axes[1].grid(True, alpha=0.3, axis='y')
         
@@ -311,6 +309,8 @@ def health():
         'status': 'healthy' # TODO придумать что тут 
     })
 
-
 if __name__ == '__main__':
-    app.run(host=VISUALIZATION_HOST, port=VISUALIZATION_PORT, debug=True)
+    host = os.environ.get('SERVICE_HOST', '0.0.0.0')
+    port = int(os.environ.get('SERVICE_PORT', VISUALIZATION_PORT))
+    print(config.service_name)
+    app.run(host=host, port=port, debug=True)

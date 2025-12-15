@@ -3,6 +3,7 @@ Storage Service - manages models, batches, results, and metrics storage
 With error handling and configuration loading
 """
 from flask import Flask, request, jsonify
+import model_classes
 import os
 import pickle
 import json
@@ -13,6 +14,8 @@ import logging
 import traceback
 from functools import wraps
 from config import Config, STORAGE_HOST, STORAGE_PORT
+import gzip
+import sys
 
 app = Flask(__name__)
 config = Config('storage')
@@ -20,6 +23,10 @@ logging.basicConfig(
     level=getattr(logging, config.get('logging.level', 'INFO')),
     format=config.get('logging.format', '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 )
+sys.modules['__main__'].MetaModel = model_classes.MetaModel
+sys.modules['__main__'].OvR = model_classes.OvR
+sys.modules['__main__'].SurvivalBoost = model_classes.SurvivalBoost
+
 logger = logging.getLogger(__name__)
 
 STORAGE_DIR = config.get('storage.base_dir', '/app/storage')
@@ -31,6 +38,30 @@ METRICS_DIR = config.get('storage.metrics_dir', f'{STORAGE_DIR}/metrics')
 for directory in [STORAGE_DIR, MODELS_DIR, BATCHES_DIR, RESULTS_DIR, METRICS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
+
+def save_pickle_gzip(obj, filename):
+    with gzip.open(filename, 'wb') as f:
+        pickle.dump(obj, f)
+
+def load_pickle_gzip(filename):
+    with gzip.open(filename, 'rb') as f:
+        return pickle.load(f)
+    
+
+def get_next_id(directory, prefix):
+    existing_ids = []
+    if os.path.exists(directory):
+        for filename in os.listdir(directory):
+            if filename.startswith(prefix):
+                try:
+                    parts = filename.split('__')
+                    for part in parts:
+                        if part.startswith('id='):
+                            existing_ids.append(int(part.split('=')[1]))
+                            break
+                except (ValueError, IndexError):
+                    continue
+    return max(existing_ids, default=0) + 1
 
 def handle_errors(f):
     @wraps(f)
@@ -166,8 +197,9 @@ def save_model():
     filename = StorageManager.encode_filename('model', metadata) + '.pkl'
     filepath = os.path.join(MODELS_DIR, filename)
     
-    with open(filepath, 'wb') as f:
-        f.write(pickle.loads(eval(model_data)))
+    save_pickle_gzip(filename, filepath)
+    # with open(filepath, 'wb') as f:
+    #     f.write(pickle.loads(eval(model_data)))
     
     # StorageManager.validate_file_size(filepath)
     
@@ -179,15 +211,50 @@ def save_model():
     })
 
 
+# @app.route('/models/load/<filename>', methods=['GET'])
+# @handle_errors
+# def load_model(filename):
+#     filepath = os.path.join(MODELS_DIR, filename)
+#     if not os.path.exists(filepath):
+#         raise FileNotFoundError(f'Model not found: {filename}')
+    
+
+#     # model = load_pickle_gzip(filepath)
+#     # with open(filepath, 'rb') as f:
+#     #     model = pickle.load(f)
+#     with gzip.open(filepath, 'rb') as f:
+#             model = pickle.load(f)
+#     logger.info(f"Model loaded: {filename}")
+#     base_name, metadata = StorageManager.decode_filename(filename)
+    
+#     logger.info(f"Model loaded: {filename}")
+#     return jsonify({
+#         'success': True,
+#         'metadata': metadata,
+#         'model_data': str(pickle.dumps(model))
+#     })
 @app.route('/models/load/<filename>', methods=['GET'])
 @handle_errors
 def load_model(filename):
     filepath = os.path.join(MODELS_DIR, filename)
     if not os.path.exists(filepath):
         raise FileNotFoundError(f'Model not found: {filename}')
-    
-    with open(filepath, 'rb') as f:
-        model = pickle.load(f)
+    else:
+        return jsonify({
+        'success': True,
+        'model_data': str(filepath)
+    })
+    print(f'открываем {filepath}')
+    if filename.endswith('.gz'):
+        try:
+            with gzip.open(filepath, 'rb') as f:
+                model = pickle.load(f)
+        except Exception as e:
+            traceback.print_exc()  
+
+    else:
+        with open(filepath, 'rb') as f:
+            model = pickle.load(f)
     
     base_name, metadata = StorageManager.decode_filename(filename)
     
@@ -197,7 +264,6 @@ def load_model(filename):
         'metadata': metadata,
         'model_data': str(pickle.dumps(model))
     })
-
 
 @app.route('/models/list', methods=['GET'])
 @handle_errors
@@ -235,8 +301,11 @@ def save_batch():
     if 'timestamp' not in metadata:
         metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
     metadata['size'] = str(len(X))
+
+    batch_id = get_next_id(BATCHES_DIR, 'batch')
+    metadata_with_id = {'id': batch_id, **metadata}
     
-    filename = StorageManager.encode_filename('batch', metadata) + '.pkl'
+    filename = StorageManager.encode_filename('batch', metadata_with_id) + '.pkl'
     filepath = os.path.join(BATCHES_DIR, filename)
     
     batch_data = {'X': X, 'y': y, 'metadata': metadata}
@@ -263,18 +332,40 @@ def load_batch(filename):
     with open(filepath, 'rb') as f:
         batch_data = pickle.load(f)
     logger.info(f"Batch loaded: {filename}")
+    # return jsonify({
+    #     'success': True,
+    #     'X': batch_data['X'].tolist(),
+    #     'y': batch_data['y'],
+    #     'metadata': batch_data['metadata']
+    # })
+    X = batch_data['X']
+    if hasattr(X, 'values'):
+        X = X.values.tolist()
+    elif hasattr(X, 'tolist'):
+        X = X.tolist()
+    y = batch_data['y']
+    if type(y['event'])==np.ndarray:
+        y = {'event': y['event'].tolist(), 'duration': y['duration'].tolist()}
+    else:
+        y = {'event': y['event'], 'duration': y['duration']}
+    
     return jsonify({
         'success': True,
-        'X': batch_data['X'].tolist(),
-        'y': batch_data['y'],
-        'metadata': batch_data['metadata']
+        'X': X,
+        'y': y,
+        'metadata': batch_data.get('metadata', {})
     })
-
 
 @app.route('/batches/list', methods=['GET'])
 @handle_errors
 def list_batches():
     batches = StorageManager.list_files_with_metadata(BATCHES_DIR)
+    # for i in range(len(batches)-1, -1, -1):
+    #     if batches[i]["base_name"] == "batch_0.pkl":
+    #         batches.pop(i)
+    #     if batches[i]["base_name"] == "batch_train.pkl":
+    #         batches.pop(i)
+    
     logger.info(f"Listed {len(batches)} batches")
     return jsonify({
         'success': True,
@@ -295,26 +386,80 @@ def delete_batch(filename):
 
 
 
+# @app.route('/results/save', methods=['POST'])
+# @handle_errors
+# def save_results():
+#     data = request.json
+#     predictions = np.array(data['predictions'])
+#     metadata = data.get('metadata', {})
+#     if 'timestamp' not in metadata:
+#         metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
+#     filename = StorageManager.encode_filename('results', metadata) + '.pkl'
+#     filepath = os.path.join(RESULTS_DIR, filename)
+#     results_data = {'predictions': predictions, 'metadata': metadata}
+#     with open(filepath, 'wb') as f:
+#         pickle.dump(results_data, f)
+#     logger.info(f"Results saved: {filename}")
+#     return jsonify({
+#         'success': True,
+#         'filename': filename,
+#         'filepath': filepath
+#     })
+
 @app.route('/results/save', methods=['POST'])
 @handle_errors
 def save_results():
     data = request.json
     predictions = np.array(data['predictions'])
     metadata = data.get('metadata', {})
-    if 'timestamp' not in metadata:
-        metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = StorageManager.encode_filename('results', metadata) + '.pkl'
+    
+    model_filename = metadata.get('model_filename', '')
+    model_id = 'unknown'
+    for part in model_filename.split('__'):
+        if part.startswith('id='):
+            model_id = part.split('=')[1]
+            break
+    if model_id == 'unknown':
+        for part in model_filename.split('__'):
+            if part.startswith('name='):
+                model_id = part.split('=')[1]
+                break
+    
+    batch_filename = metadata.get('batch_filename', '')
+    batch_id = 'unknown'
+    for part in batch_filename.split('__'):
+        if part.startswith('id='):
+            batch_id = part.split('=')[1]
+            break
+    
+    result_id = get_next_id(RESULTS_DIR, 'result')
+    short_metadata = {
+        'id': result_id,
+        'model': model_id,
+        'batch': batch_id
+    }
+    
+    filename = StorageManager.encode_filename('result', short_metadata) + '.pkl'
     filepath = os.path.join(RESULTS_DIR, filename)
+    
+    metadata['result_id'] = result_id
+    metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
     results_data = {'predictions': predictions, 'metadata': metadata}
+    if type(predictions)==np.ndarray:
+        logger.info('NP ARRAY')
+        logger.info(predictions.shape)
+    else:
+        logger.info(type(predictions))
+    
     with open(filepath, 'wb') as f:
         pickle.dump(results_data, f)
+    
     logger.info(f"Results saved: {filename}")
     return jsonify({
         'success': True,
         'filename': filename,
         'filepath': filepath
     })
-
 
 @app.route('/results/load/<filename>', methods=['GET'])
 @handle_errors
@@ -352,18 +497,54 @@ def save_metrics():
     data = request.json
     metrics = data['metrics']
     metadata = data.get('metadata', {})
-    if 'timestamp' not in metadata:
-        metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
-    filename = StorageManager.encode_filename('metrics', metadata) + '.json'
+    result_filename = metadata.get('predictions_filename', '')
+    result_id = 'unknown'
+    for part in result_filename.split('__'):
+        if part.startswith('id='):
+            result_id = part.split('=')[1]
+            break
+    
+    model_id = 'unknown'
+    batch_id = 'unknown'
+    for part in result_filename.split('__'):
+        if part.startswith('model='):
+            model_id = part.split('=')[1]
+        elif part.startswith('batch='):
+            batch_id = part.split('=')[1].replace('.pkl', '')
+    
+    metrics_id = get_next_id(METRICS_DIR, 'metrics')
+    short_metadata = {
+        'id': metrics_id,
+        'model': model_id,
+        'batch': batch_id
+    }
+    
+    filename = StorageManager.encode_filename('metrics', short_metadata) + '.json'
     filepath = os.path.join(METRICS_DIR, filename)
+    metadata['metrics_id'] = metrics_id
+    metadata['timestamp'] = datetime.now().strftime('%Y%m%d_%H%M%S')
     metrics_data = {'metrics': metrics, 'metadata': metadata}
+    
     with open(filepath, 'w') as f:
         json.dump(metrics_data, f, indent=2)
+    
     logger.info(f"Metrics saved: {filename}")
     return jsonify({
         'success': True,
         'filename': filename,
         'filepath': filepath
+    })
+
+@app.route('/metrics/list', methods=['GET'])
+@handle_errors
+def list_metrics():
+    """List all saved metrics"""
+    metrics = StorageManager.list_files_with_metadata(METRICS_DIR)
+    logger.info(f"Listed {len(metrics)} metrics")
+    return jsonify({
+        'success': True,
+        'count': len(metrics),
+        'metrics': metrics
     })
 
 
@@ -412,10 +593,16 @@ def health():
         }), 500
 
 
-if __name__ == '__main__':
-    host = config.get('server.host', STORAGE_HOST)
-    port = config.get('server.port', STORAGE_PORT)
-    debug = config.get('server.debug', False)
+# if __name__ == '__main__':
+#     host = config.get('server.host', STORAGE_HOST)
+#     port = config.get('server.port', STORAGE_PORT)
+#     debug = config.get('server.debug', False)
     
-    logger.info(f"Starting Storage Service on {host}:{port}")
-    app.run(host=host, port=port, debug=debug)
+#     logger.info(f"Starting Storage Service on {host}:{port}")
+#     app.run(host=host, port=port, debug=debug)
+
+if __name__ == '__main__':
+    host = os.environ.get('SERVICE_HOST', '0.0.0.0')
+    port = int(os.environ.get('SERVICE_PORT', STORAGE_PORT))
+    print(config.service_name)
+    app.run(host=host, port=port, debug=True)
