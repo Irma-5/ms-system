@@ -1,105 +1,199 @@
+"""
+Configuration for Survival Analysis Microservices
+Works both locally and in Docker containers
+"""
 import os
-import numpy as np
 import yaml
 import logging
-from typing import Dict, Any
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# =============================================================================
+# SERVICE HOSTS AND PORTS
+# =============================================================================
+# В Docker используем имена сервисов, локально - localhost
+# Переменные окружения имеют приоритет
 
+STORAGE_HOST = os.environ.get('STORAGE_HOST', 'storage')
+STORAGE_PORT = int(os.environ.get('STORAGE_PORT', 8003))
 
-class Config:
+COLLECTOR_HOST = os.environ.get('COLLECTOR_HOST', 'collector')
+COLLECTOR_PORT = int(os.environ.get('COLLECTOR_PORT', 8001))
+
+MLSERVICE_HOST = os.environ.get('MLSERVICE_HOST', 'mlservice')
+MLSERVICE_PORT = int(os.environ.get('MLSERVICE_PORT', 8002))
+
+VISUALIZATION_HOST = os.environ.get('VISUALIZATION_HOST', 'visualization')
+VISUALIZATION_PORT = int(os.environ.get('VISUALIZATION_PORT', 8004))
+
+WEBMASTER_HOST = os.environ.get('WEBMASTER_HOST', '0.0.0.0')
+WEBMASTER_PORT = int(os.environ.get('WEBMASTER_PORT', 8000))
+
+# URL shortcuts
+STORAGE_URL = f'http://{STORAGE_HOST}:{STORAGE_PORT}'
+COLLECTOR_URL = f'http://{COLLECTOR_HOST}:{COLLECTOR_PORT}'
+MLSERVICE_URL = f'http://{MLSERVICE_HOST}:{MLSERVICE_PORT}'
+VISUALIZATION_URL = f'http://{VISUALIZATION_HOST}:{VISUALIZATION_PORT}'
+
+# =============================================================================
+# SERVICE PORT MAPPING - каждый сервис знает свой порт
+# =============================================================================
+SERVICE_PORTS = {
+    'storage': 8003,
+    'collector': 8001,
+    'mlservice': 8002,
+    'visualization': 8004,
+    'webmaster': 8000,
+}
+
+def get_service_port(service_name: str) -> int:
+    """Get port for a specific service. Priority: ENV > SERVICE_PORTS > default"""
+    # 1. Сначала проверяем SERVICE_PORT из environment (docker-compose)
+    env_port = os.environ.get('SERVICE_PORT')
+    if env_port:
+        return int(env_port)
     
-    def __init__(self, service_name: str = None):
-        self.service_name = service_name or os.getenv('SERVICE_NAME', 'default')
-        self.config = self._load_config()
+    # 2. Затем ищем по имени сервиса
+    if service_name in SERVICE_PORTS:
+        return SERVICE_PORTS[service_name]
     
-    def _load_config(self) -> Dict[str, Any]:
-        config_dir = os.getenv('CONFIG_DIR', '/app/config')
-        config_file = os.path.join(config_dir, f'{self.service_name}.yaml')
-        
-        if not os.path.exists(config_file):
-            config_dir = os.path.join(os.path.dirname(__file__), 'config')
-            config_file = os.path.join(config_dir, f'{self.service_name}.yaml')
-        
-        if os.path.exists(config_file):
-            try:
-                with open(config_file, 'r') as f:
-                    config = yaml.safe_load(f)
-                    logger.info(f"Loaded configuration from {config_file}")
-                    return config
-            except Exception as e:
-                logger.error(f"Error loading config from {config_file}: {e}")
-                return self._default_config()
-        else:
-            logger.warning(f"Config file not found: {config_file}, using defaults")
-            return self._default_config()
-    
-    def _default_config(self) -> Dict[str, Any]:
-        return {
-            'service': {
-                'name': self.service_name,
-            },
-            'server': {
-                'host': '0.0.0.0',
-                'port': 8000
-            }
-        }
-    
-    def get(self, key: str, default: Any = None) -> Any:
-        keys = key.split('.')
-        value = self.config
-        for k in keys:
-            if isinstance(value, dict):
-                value = value.get(k)
-                if value is None:
-                    return default
-            else:
-                return default
-        return value
+    # 3. Default
+    return 8000
 
+def get_service_host() -> str:
+    """Get host to bind to. In Docker always 0.0.0.0"""
+    host = os.environ.get('SERVICE_HOST', '0.0.0.0')
+    # Если host - это имя сервиса (storage, collector, etc), слушаем на всех интерфейсах
+    if host in SERVICE_PORTS:
+        return '0.0.0.0'
+    return host
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STORAGE_DIR = os.path.join(BASE_DIR, 'storage')
-MODELS_DIR = os.path.join(STORAGE_DIR, 'models')
-BATCHES_DIR = os.path.join(STORAGE_DIR, 'batches')
-RESULTS_DIR = os.path.join(STORAGE_DIR, 'results')
-METRICS_DIR = os.path.join(STORAGE_DIR, 'metrics')
+# =============================================================================
+# DATA CONFIGURATION
+# =============================================================================
+STATIC_COLS = [
+    'credit_score', 'MI_pct', 'unit_cnt', 'occ_status', 'ocltv', 'dti',
+    'orig_upb', 'oltv', 'orig_ir', 'channel', 'property_type', 'zip3',
+    'loan_purpose', 'orig_term', 'cnt_borr', 'seller', 'first_flag',
+    'MSA', 'first_time_hb_flag', 'MI_cancel_flag', 'int_only_flag', 
+    'property_val_method', 'super_conf_flag', 'amortization_type'
+]
 
-STORAGE_URL = os.getenv('STORAGE_URL', 'http://localhost:8003')
-COLLECTOR_URL = os.getenv('COLLECTOR_URL', 'http://localhost:8001')
-MLSERVICE_URL = os.getenv('MLSERVICE_URL', 'http://localhost:8002')
-VISUALIZATION_URL = os.getenv('VISUALIZATION_URL', 'http://localhost:8004')
-WEBMASTER_URL = os.getenv('WEBMASTER_URL', 'http://localhost:8000')
+CATEG_COLS = [
+    'occ_status', 'channel', 'property_type', 'loan_purpose',
+    'seller', 'first_flag', 'first_time_hb_flag', 'MI_cancel_flag',
+    'int_only_flag', 'property_val_method', 'super_conf_flag', 
+    'amortization_type'
+]
 
-WEBMASTER_HOST = os.getenv('WEBMASTER_HOST', '0.0.0.0')
-WEBMASTER_PORT = int(os.getenv('SERVICE_PORT', 8000)) if os.getenv('SERVICE_NAME') == 'webmaster' else 8000
+#TODO нормальные названия
 
-COLLECTOR_HOST = os.getenv('COLLECTOR_HOST', '0.0.0.0')
-COLLECTOR_PORT = int(os.getenv('SERVICE_PORT', 8001)) if os.getenv('SERVICE_NAME') == 'collector' else 8001
-
-MLSERVICE_HOST = os.getenv('MLSERVICE_HOST', '0.0.0.0')
-MLSERVICE_PORT = int(os.getenv('SERVICE_PORT', 8002)) if os.getenv('SERVICE_NAME') == 'mlservice' else 8002
-
-STORAGE_HOST = os.getenv('STORAGE_HOST', '0.0.0.0')
-STORAGE_PORT = int(os.getenv('SERVICE_PORT', 8003)) if os.getenv('SERVICE_NAME') == 'storage' else 8003
-
-VISUALIZATION_HOST = os.getenv('VISUALIZATION_HOST', '0.0.0.0')
-VISUALIZATION_PORT = int(os.getenv('SERVICE_PORT', 8004)) if os.getenv('SERVICE_NAME') == 'visualization' else 8004
+EVENTS = {
+    0: "in process",
+    1: "prepayment", 
+    2: "default",
+    3: "paid_off",
+    4: "foreclosure",
+    5: "short_sale",
+    6: "modification"
+}
 
 TIME_GRID_SIZE = 100
-TIME_GRID = np.linspace(1, 309, 100) 
-AVAILABLE_EVENTS = [1, 2, 3, 4, 5, 6, 7]
 
-STATIC_COLS = ['credit_score', 'first_time_homebuyer_flag', 'units_numb', 'MSA', 'MI_%', 
-               'occupancy_status', 'CLTV', 'DTI_ratio', 'orig_UPB', 'LTV', 'orig_interest_rate', 
-               'channel', 'PPM_flag', 'amortization_type', 'property_state', 'property_type', 
-               'loan_purpose', 'orig_loan_term', 'borrowers_num', 'super_conf_flag',
-               'int_only_flag', 'property_val_method']
+class Config:
+    """Configuration manager that loads from YAML files with fallbacks"""
+    
+    def __init__(self, service_name: str = None):
+        self.service_name = service_name
+        self.config = {}
+        self._load_config()
+        print(service_name)
+    
+    def _load_config(self):
+        """Load configuration from YAML file if exists"""
+        config_paths = [
+            f'/app/config/{self.service_name}.yaml' if self.service_name else None,
+            f'/app/config.yaml',
+            f'/app/{self.service_name}_config.yaml' if self.service_name else None,
+            'config.yaml',
+            f'{self.service_name}_config.yaml' if self.service_name else None,
+        ]
+        
+        for path in config_paths:
+            if path and os.path.exists(path):
+                try:
+                    with open(path, 'r') as f:
+                        loaded = yaml.safe_load(f)
+                        if loaded:
+                            self.config.update(loaded)
+                except Exception as e:
+                    pass
+        
+        # Set defaults based on service name
+        self._set_defaults()
+    
+    def _set_defaults(self):
+        """Set default configuration values based on service name"""
+        # Определяем порт для текущего сервиса
+        service_port = get_service_port(self.service_name) if self.service_name else 8000
+        
+        defaults = {
+            'server': {
+                'host': '0.0.0.0',
+                'port': service_port,  # Порт зависит от сервиса!
+                'debug': False
+            },
+            'logging': {
+                'level': 'INFO',
+                'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            },
+            'storage': {
+                'base_dir': '/app/storage',
+                'models_dir': '/app/storage/models',
+                'batches_dir': '/app/storage/batches',
+                'results_dir': '/app/storage/results',
+                'metrics_dir': '/app/storage/metrics',
+                'max_file_size_mb': 1000
+            },
+            'batch': {
+                'default_size': 1000,
+                'max_size': 50000,
+                'default_strategy': 'random',
+                'strategies': ['balanced', 'imbalanced', 'random']
+            },
+            'dependencies': {
+                'timeout_seconds': 60
+            },
+            'statistics': {
+                'time_bins': 20
+            }
+        }
+        
+        # Merge defaults with loaded config
+        for key, value in defaults.items():
+            if key not in self.config:
+                self.config[key] = value
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    if k not in self.config[key]:
+                        self.config[key][k] = v
+    
+    def get(self, key: str, default=None):
+        """Get config value using dot notation (e.g., 'server.port')"""
+        keys = key.split('.')
+        value = self.config
+        
+        try:
+            for k in keys:
+                value = value[k]
+            return value
+        except (KeyError, TypeError):
+            return default
 
-CATEG_COLS = ['occupancy_status', 'first_time_homebuyer_flag', 'channel', 'PPM_flag', 
-              'amortization_type', 'property_state', 'borrowers_num', 'int_only_flag', 
-              'property_val_method', 'property_type', 'loan_purpose', 'super_conf_flag']
 
-for directory in [STORAGE_DIR, MODELS_DIR, BATCHES_DIR, RESULTS_DIR, METRICS_DIR]:
-    os.makedirs(directory, exist_ok=True)
+# =============================================================================
+# LOGGER SETUP
+# =============================================================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)

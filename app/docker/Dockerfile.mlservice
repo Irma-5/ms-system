@@ -9,7 +9,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
+COPY config.py .   
 COPY mlservice.py .
+COPY model_classes.py .
+COPY storage/models/ /app/storage/models/
 COPY utils.py .
 
 EXPOSE 8002

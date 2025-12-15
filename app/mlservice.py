@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
+import model_classes
 import numpy as np
 import pandas as pd
 import pickle
@@ -10,10 +11,16 @@ from sksurv.metrics import check_y_survival
 from lifelines import CoxPHFitter
 from sksurv.ensemble import RandomSurvivalForest
 import traceback
+import gzip
+import sys
 
 
 app = Flask(__name__)
 config = Config('mlservice')
+TIME_GRID_SIZE = config.get('ml.time_grid_size', 100)
+sys.modules['__main__'].MetaModel = model_classes.MetaModel
+sys.modules['__main__'].OvR = model_classes.OvR
+sys.modules['__main__'].SurvivalBoost = model_classes.SurvivalBoost
 
 def handle_errors(f):
     @wraps(f)
@@ -174,24 +181,35 @@ def predict():
         )
         if model_response.status_code != 200:
             return jsonify({'error': 'Model not found'}), 404
-        
         model_data = model_response.json()
-        model = pickle.loads(eval(model_data['model_data']))
+        filepath = model_data['model_data']
+        with gzip.open(filepath, 'rb') as f:
+            model = pickle.load(f)
+        logger.info(f"Model loaded")
+        # model_data = model_response.json()
+        # logger.info(f"model_data unpacked")
+        # model = pickle.loads(eval(model_data['model_data']))
         
         batch_response = requests.get(
-            f'http://{STORAGE_HOST}:{STORAGE_PORT}/batches/load/{batch_filename}'
+            f'http://{COLLECTOR_HOST}:{COLLECTOR_PORT}/preprocess/{batch_filename}'
         )
+        logger.info(f"batch loaded")
         if batch_response.status_code != 200:
             return jsonify({'error': 'Batch not found'}), 404
         
         batch_data = batch_response.json()
         X = np.array(batch_data['X'])
         y = batch_data['y']
-        
+        logger.info(f"batch x, y")
         y_duration = np.array(y['duration'])
         TIME_GRID = np.linspace(1, 309, 100)
-        
-        predictions = model.predict(X)
+        logger.info(f"y_duration, time_grid")
+        try:
+            predictions = model.predict(X)
+            logger.info(f"predicted")
+        except Exception as e:
+            logger.info(f"Error predict")
+            traceback.print_exc()  
         
         metadata['model_filename'] = model_filename
         metadata['batch_filename'] = batch_filename
@@ -219,6 +237,7 @@ def predict():
         return jsonify(result)
         
     except Exception as e:
+        traceback.print_exc()  
         return jsonify({'error': str(e)}), 500
 
 
@@ -235,10 +254,13 @@ def compute_metrics():
     }
     """
     try:
+        logger.info('read data')
         data = request.json
         predictions_filename = data.get('predictions_filename')
+        logger.info(predictions_filename)
         batch_filename = data.get('batch_filename')
-        train_batch_filename='batch_train.csv'
+        logger.info(batch_filename)
+        train_batch_filename='batch_train.pkl'
         # train_batch_filename = data.get('train_batch_filename')
         save_metrics = data.get('save_metrics', True)
         metadata = data.get('metadata', {})
@@ -250,7 +272,8 @@ def compute_metrics():
             return jsonify({'error': 'Predictions not found'}), 404
         
         pred_data = pred_response.json()
-        predictions = np.array(pred_data['predictions'])
+        sf = np.array(pred_data['predictions'])
+        logger.info(sf.shape)
         TIME_GRID = np.linspace(1, 309, 100)
         
         batch_response = requests.get(
@@ -261,6 +284,10 @@ def compute_metrics():
         
         batch_data = batch_response.json()
         y_test = batch_data['y']
+        # print()
+        # logger.info("Тип y: %s", type(y_test))
+        # print(type(y_test))
+        # print()
         y_test_event = np.array(y_test['event'])
         y_test_duration = np.array(y_test['duration'])
         
@@ -293,9 +320,11 @@ def compute_metrics():
         
         for i in unique_events:
             event_idx = i - 1
+
+            if i > 0:
             
-            if event_idx < predictions.shape[0]:
-                sf = predictions[event_idx, ...]
+            # if event_idx < predictions.shape[0]:
+                # sf = predictions[event_idx, ...]
                 
                 y_train_i = get_y_self_event(y_train_struct, [i])
                 y_test_i = get_y_self_event(y_test_struct, [i])
@@ -303,15 +332,14 @@ def compute_metrics():
                 event_mask = y_test_event == i
                 sf_event = sf[event_mask, :]
                 
-                if len(y_test_i) > 0 and sf_event.shape[0] > 0:
-                    ibs = ibs_remain(y_train_i, y_test_i, sf_event, 
+                ibs = ibs_remain(y_train_i, y_test_i, sf_event, 
                                     times=TIME_GRID, axis=-1)
-                    ibs_scores[f'event_{i}'] = float(ibs)
+                ibs_scores[f'event_{i}'] = float(ibs)
                     
-                    auprc = calculate_survival_auprc_vectorized(
+                auprc = calculate_survival_auprc_vectorized(
                         y_test_i, sf_event, TIME_GRID
                     )
-                    auprc_scores[f'event_{i}'] = float(auprc)
+                auprc_scores[f'event_{i}'] = float(auprc)
         
         metrics_result = {
             'ibs': ibs_scores,
@@ -345,6 +373,7 @@ def compute_metrics():
         return jsonify(result)
         
     except Exception as e:
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
@@ -358,4 +387,7 @@ def health():
 
 
 if __name__ == '__main__':
-    app.run(host=MLSERVICE_HOST, port=MLSERVICE_PORT, debug=True)
+    host = os.environ.get('SERVICE_HOST', '0.0.0.0')
+    port = int(os.environ.get('SERVICE_PORT', MLSERVICE_PORT))
+    print(config.service_name)
+    app.run(host=host, port=port, debug=True)

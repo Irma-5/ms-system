@@ -8,7 +8,10 @@ RUN apt-get update && apt-get install -y \
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY config.py .   
 COPY storage_service.py .
+COPY storage/models/ /app/storage/models/
+COPY model_classes.py .
 COPY utils.py .
 RUN mkdir -p /app/storage/models \
     /app/storage/batches \

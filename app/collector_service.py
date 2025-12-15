@@ -82,12 +82,12 @@ class Scaler:
     
     def fit(self, list_of_df):
         X = pd.concat(list_of_df, axis=0)
-        X.drop(self.constant_cols, inplace=True, axis=1)
+        # X.drop(self.constant_cols, inplace=True, axis=1)
         self.enc.fit(X)
     
     def transform(self, X):
         X.MSA.fillna(X.MSA.median(), inplace=True)
-        X.drop(self.constant_cols, inplace=True, axis=1)
+        # X.drop(self.constant_cols, inplace=True, axis=1)
         X = self.enc.transform(X)
         scaler = StandardScaler().set_output(transform="pandas")
         X = scaler.fit_transform(X)
@@ -95,7 +95,7 @@ class Scaler:
     
 
 @app.route('/batch/create_from_storage', methods=['POST'])
-def create_batch_from_storage():
+def create_batch_from_storage(): # создает из batch_0 по заданной стратегии батч и сохраняет его без предобработки
     """
     JSON:
     {
@@ -209,6 +209,7 @@ def create_batch_from_storage():
     
     if response.status_code == 200:
         result = response.json()
+        result['success'] = True
         result['event_distribution'] = metadata['event_distribution']
         logger.info(f"Batch saved: {result['filename']}")
         return jsonify(result)
@@ -218,7 +219,7 @@ def create_batch_from_storage():
 
 
 @app.route('/batch/create', methods=['POST'])
-def create_batch():
+def create_batch(): # создает данные из загруженных
     """
     JSON:
     {
@@ -373,12 +374,13 @@ def batch_statistics(filename):
         'metadata': batch_data['metadata']
     })
 
-@app.route('/preprocess/<source_batch>', methods=['POST'])
+@app.route('/preprocess/<source_batch>', methods=['GET'])
 @handle_errors
 def preprocess_from_storage(source_batch):
 
     response = requests.get(f'{STORAGE_URL}/batches/list')
     if response.status_code != 200:
+        logger.info('responce failed to list batches')
         raise Exception('Failed to list batches')
     
     batches = response.json()['batches']
@@ -390,21 +392,34 @@ def preprocess_from_storage(source_batch):
             break
     
     if not source_file:
+        logger.info('batch not found')
         raise FileNotFoundError(f'Batch "{source_batch}" not found')
     
     response = requests.get(f'{STORAGE_URL}/batches/load/{source_file}')
     if response.status_code != 200:
         raise Exception(f'Failed to load batch {source_file}')
     
+    logger.info('received batch')
     batch_data = response.json()
     X = pd.DataFrame(batch_data['X'])
+    logger.info('X = pd.DataFrame')
     scaler = Scaler()
-    scaler.fit([X])
-    X_transformed = scaler.transform(X.copy())
+    logger.info('scaler')
+    # scaler.fit([X])
+    logger.info('scaler fit')
+    # X_transformed = scaler.transform(X.copy())
+    logger.info('scaler trasnm')
+    y = pd.DataFrame(batch_data['y'])
+    logger.info('y = pd.DataFrame')
+    y, dct = transform_events(y)
+    logger.info(type(y))
+    y = {'event': y['event'].to_numpy().tolist(), 'duration': y['duration'].to_numpy().tolist()}
+
     
     result = {
         'success': True,
-        'X_transformed': X_transformed.to_numpy().tolist()
+        'X': X.to_numpy().tolist(),
+        'y': y
     }
     
     logger.info(f"Preprocessed batch: {source_file}")
@@ -421,4 +436,7 @@ def health():
 
 
 if __name__ == '__main__':
-    app.run(host=COLLECTOR_HOST, port=COLLECTOR_PORT, debug=True)
+    host = os.environ.get('SERVICE_HOST', '0.0.0.0')
+    port = int(os.environ.get('SERVICE_PORT', COLLECTOR_PORT))
+    print(config.service_name)
+    app.run(host=host, port=port, debug=True)

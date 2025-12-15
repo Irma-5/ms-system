@@ -11,6 +11,7 @@ services:
       - ./storage:/app/storage
       - ./config:/app/config
     environment:
+      - SERVICE_HOST=0.0.0.0 
       - SERVICE_NAME=storage
       - SERVICE_PORT=8003
       - PYTHONUNBUFFERED=1
@@ -35,6 +36,7 @@ services:
     volumes:
       - ./config:/app/config
     environment:
+      - SERVICE_HOST=0.0.0.0 
       - SERVICE_NAME=collector
       - SERVICE_PORT=8001
       - STORAGE_URL=http://storage:8003
@@ -63,6 +65,7 @@ services:
     volumes:
       - ./config:/app/config
     environment:
+      - SERVICE_HOST=0.0.0.0 
       - SERVICE_NAME=mlservice
       - SERVICE_PORT=8002
       - STORAGE_URL=http://storage:8003
@@ -91,6 +94,7 @@ services:
     volumes:
       - ./config:/app/config
     environment:
+      - SERVICE_HOST=0.0.0.0 
       - SERVICE_NAME=visualization
       - SERVICE_PORT=8004
       - STORAGE_URL=http://storage:8003
@@ -119,6 +123,7 @@ services:
     volumes:
       - ./config:/app/config
     environment:
+      - SERVICE_HOST=0.0.0.0 
       - SERVICE_NAME=webmaster
       - SERVICE_PORT=8000
       - STORAGE_URL=http://storage:8003
