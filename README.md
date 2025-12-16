@@ -23,7 +23,7 @@ Microservices architecture for competing risks analysis
 1. Копируем репозиторий
 
 ```bash
-git clone https://github.com/<your-username>/<repo-name>.git
+git clone https://github.com/Irma-5/ms-system.git
 ```
 
 2. Переходим в проект
